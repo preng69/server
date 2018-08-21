@@ -1,3 +1,7 @@
+// Copyright 2018 The goftp Authors. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 package server
 
 import (
@@ -6,9 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"io"
 )
 
-// A data socket is used to send non-control data between the client and
+// DataSocket describes a data socket is used to send non-control data between the client and
 // server.
 type DataSocket interface {
 	Host() string
@@ -17,6 +22,9 @@ type DataSocket interface {
 
 	// the standard io.Reader interface
 	Read(p []byte) (n int, err error)
+
+	// the standard io.ReaderFrom interface
+	ReadFrom(r io.Reader) (int64, error)
 
 	// the standard io.Writer interface
 	Write(p []byte) (n int, err error)
@@ -72,6 +80,10 @@ func (socket *ftpActiveSocket) Read(p []byte) (n int, err error) {
 	return socket.conn.Read(p)
 }
 
+func (socket *ftpActiveSocket) ReadFrom(r io.Reader) (int64, error) {
+	return socket.conn.ReadFrom(r)
+}
+
 func (socket *ftpActiveSocket) Write(p []byte) (n int, err error) {
 	return socket.conn.Write(p)
 }
@@ -118,6 +130,16 @@ func (socket *ftpPassiveSocket) Read(p []byte) (n int, err error) {
 		return 0, err
 	}
 	return socket.conn.Read(p)
+}
+
+func (socket *ftpPassiveSocket) ReadFrom(r io.Reader) (int64, error) {
+	if err := socket.waitForOpenSocket(); err != nil {
+		return 0, err
+	}
+
+	// For normal TCPConn, this will use sendfile syscall; if not,
+	// it will just downgrade to normal read/write procedure
+	return io.Copy(socket.conn, r)
 }
 
 func (socket *ftpPassiveSocket) Write(p []byte) (n int, err error) {
